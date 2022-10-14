@@ -1,0 +1,40 @@
+name: Docker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+env:
+  IMAGE_NAME: terraform-cloud-agent
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Get Image Tag Name
+        run: |
+          IMAGE_ID=${{ secrets.BUILD_CONTAINER_REGISTRY_URL }}/${{ github.repository }}/$IMAGE_NAME
+          # Change all uppercase to lowercase
+          IMAGE_ID=$(echo $IMAGE_ID | tr '[A-Z]' '[a-z]')
+          VERSION=latest
+          echo "TAG_NAME=$IMAGE_ID:$VERSION" >> $GITHUB_ENV
+
+      - name: Build image
+        run: docker build . --file Dockerfile --tag ${{ env.TAG_NAME }}
+
+      - uses: Azure/container-scan@v0
+        name: Scan image for vulnerabilities
+        id: container-scan
+        continue-on-error: true
+        with:
+          image-name: ${{ env.TAG_NAME }}
+
+      - name: Log into registry
+        run: echo "${{ secrets.BUILD_CONTAINER_REGISTRY_PASSWORD }}" | docker login ${{ secrets.BUILD_CONTAINER_REGISTRY_URL }} -u ${{ secrets.BUILD_CONTAINER_REGISTRY_USERNAME }} --password-stdin
+
+      - name: Push image
+        run: docker push ${{ env.TAG_NAME }}
